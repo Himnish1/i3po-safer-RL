@@ -52,9 +52,7 @@ class IP3O(PPOLagrangian):
         cost_clipped = torch.clamp(ratio, 1 - self.cfg.clip_ratio, 1 + self.cfg.clip_ratio)
         cost_surrogate = torch.max(ratio * batch["cost_adv"],
                                    cost_clipped * batch["cost_adv"]).mean()
-        per_step_cost_limit = self.cfg.cost_limit * (1.0 - self.cfg.gamma)
-        # = 25 * 0.01 = 0.25 per step
-
+        per_step_cost_limit = self.cfg.cost_limit
         l_cost = cost_surrogate + batch["cost_returns"].mean() - per_step_cost_limit
 
         celu_val = F.celu(l_cost)
@@ -73,10 +71,26 @@ class IP3O(PPOLagrangian):
         return reward_loss + penalty, approx_kl
 
     def update(self, batch):
-        info = super().update(batch)
-        # Use cached values from the last inner iteration — do NOT recompute l_cost here
-        info["l_cost"] = self._last_l_cost
-        info["celu_penalty"] = self._last_celu
-        print(f"  l_cost:       {info['l_cost']:.4f}")
-        print(f"  celu_penalty: {info['celu_penalty']:.4f}")
+        info = {}
+        for _ in range(self.cfg.train_iters):
+            self.optimizer.zero_grad()
+            policy_loss, approx_kl = self._policy_loss(batch)
+            value_loss = self._value_loss(batch)
+            total_loss = policy_loss + value_loss
+            total_loss.backward()
+            self.optimizer.step()
+            info["kl"] = float(approx_kl.item())
+            if approx_kl > self.cfg.target_kl:
+                break
+
+        # No update_lagrange_multiplier call
+        info.update({
+            "policy_loss": float(policy_loss.item()),
+            "value_loss": float(value_loss.item()),
+            "lagrange_multiplier": 0.0,  # always zero for IP3O
+            "l_cost": self._last_l_cost,
+            "celu_penalty": self._last_celu,
+        })
+        print(self._last_l_cost)
+        print(self._last_celu)
         return info

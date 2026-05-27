@@ -1,7 +1,7 @@
 env_id: SafetyPointGoal1-v0
 algorithm: ppo_lag
 seed: 0
-epochs: 60
+epochs: 150
 steps_per_epoch: 4000
 gamma: 0.99
 gae_lambda: 0.95
@@ -14,5 +14,5 @@ algorithm_config:
   train_iters: 10
   target_kl: 0.09
   entropy_coef: 0.05
-  cost_limit: 400.0
+  cost_limit: 4
   lambda_lr: 0.05
