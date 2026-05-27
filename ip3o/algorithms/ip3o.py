@@ -10,42 +10,33 @@ from ip3o.algorithms.ppo_lag import PPOLagConfig, PPOLagrangian
 
 @dataclass
 class IP3OConfig(PPOLagConfig):
-    initial_penalty: float = 0.1
-    penalty_increment: float = 0.05
-    max_penalty: float = 10.0
+    eta: float = 0.5
     gamma: float = 0.99
 
 
 class IP3O(PPOLagrangian):
-    """Incrementally penalized PPO with logarithmic barrier term."""
+    """Incrementally penalized PPO with fixed CELU barrier.
+
+    The "incremental" penalty scaling comes from CELU's implicit escalation:
+    when L_C < 0 (safe), CELU incentivizes staying safe.
+    When L_C > 0 (unsafe), CELU linearly penalizes violations.
+    As training progresses, L_C naturally increases, self-scaling the penalty.
+    """
 
     def __init__(self, actor_critic, config: IP3OConfig, device: torch.device):
         super().__init__(actor_critic, config, device)
         self.cfg: IP3OConfig = config
-        self.penalty_coeff = torch.tensor(config.initial_penalty, dtype=torch.float32, device=device)
-
-    def anneal_penalty(self) -> None:
-        self.penalty_coeff = torch.clamp(self.penalty_coeff + self.cfg.penalty_increment, max=self.cfg.max_penalty)
-
-    def incremental_penalty(self, l_cost: torch.Tensor) -> torch.Tensor:
-        """Apply CELU barrier to the full cost loss term L_C.
-
-        Args:
-            l_cost: Full L_C term = (1/(1-gamma)) * cost_surrogate + J_C - d
-
-        Returns:
-            Penalty = eta * CELU(L_C)
-        """
-        return self.penalty_coeff * F.celu(l_cost)
+        # Cached values from the last policy inner-step for accurate logging
+        self._last_l_cost: float = 0.0
+        self._last_celu: float = 0.0
 
     def _policy_loss(self, batch):
-        """Compute IP3O policy loss with clipped cost surrogate.
+        """Compute IP3O policy loss with fixed CELU barrier.
 
-        Loss = reward_loss + penalty_term
-
-        Penalty term = eta * CELU(L_C) where
-        L_C = (1/(1-gamma)) * E[max(clip(ratio) * A_C, ratio * A_C)] + J_C - d
+        Loss = L_R + eta * CELU(L_C)
+        Note: consolidate forward passes so the network is evaluated once per call.
         """
+        # Single forward pass for policy-related quantities
         logp, entropy, _, _ = self.ac.evaluate_actions(batch["obs"], batch["actions"])
         ratio = torch.exp(logp - batch["log_probs"])
 
@@ -56,21 +47,50 @@ class IP3O(PPOLagrangian):
         reward_loss -= self.cfg.entropy_coef * entropy.mean()
         approx_kl = (batch["log_probs"] - logp).mean().abs()
 
-        # Cost surrogate (PPO with max clip — opposite of reward)
-        clipped_cost = torch.clamp(ratio, 1 - self.cfg.clip_ratio, 1 + self.cfg.clip_ratio)
+        # Cost surrogate (reuse the same ratio and clipping)
+        # NOTE: for cost we use max(clip, no-clip) per paper
+        cost_clipped = torch.clamp(ratio, 1 - self.cfg.clip_ratio, 1 + self.cfg.clip_ratio)
         cost_surrogate = torch.max(ratio * batch["cost_adv"],
-                                   clipped_cost * batch["cost_adv"]).mean()
+                                   cost_clipped * batch["cost_adv"]).mean()
+        per_step_cost_limit = self.cfg.cost_limit
+        l_cost = cost_surrogate + batch["cost_returns"].mean() - per_step_cost_limit
 
-        # Full L_C = (1/(1-gamma)) * cost_surrogate + J_C - d
-        l_cost = (1.0 / (1.0 - self.cfg.gamma)) * cost_surrogate \
-                 + batch["cost_returns"].mean() \
-                 - self.cfg.cost_limit
+        celu_val = F.celu(l_cost)
+        penalty = self.cfg.eta * celu_val
 
-        penalty = self.incremental_penalty(l_cost)
+        # Cache the scalar values for logging after the inner loop finishes
+        # Convert to Python floats to avoid holding graph references
+        try:
+            self._last_l_cost = float(l_cost.item())
+            self._last_celu = float(celu_val.item())
+        except Exception:
+            # If conversion fails (e.g., distributed tensors), fall back safely
+            self._last_l_cost = float(l_cost.detach().cpu().item())
+            self._last_celu = float(celu_val.detach().cpu().item())
+
         return reward_loss + penalty, approx_kl
 
     def update(self, batch):
-        info = super().update(batch)
-        self.anneal_penalty()
-        info["penalty_coeff"] = float(self.penalty_coeff.item())
+        info = {}
+        for _ in range(self.cfg.train_iters):
+            self.optimizer.zero_grad()
+            policy_loss, approx_kl = self._policy_loss(batch)
+            value_loss = self._value_loss(batch)
+            total_loss = policy_loss + value_loss
+            total_loss.backward()
+            self.optimizer.step()
+            info["kl"] = float(approx_kl.item())
+            if approx_kl > self.cfg.target_kl:
+                break
+
+        # No update_lagrange_multiplier call
+        info.update({
+            "policy_loss": float(policy_loss.item()),
+            "value_loss": float(value_loss.item()),
+            "lagrange_multiplier": 0.0,  # always zero for IP3O
+            "l_cost": self._last_l_cost,
+            "celu_penalty": self._last_celu,
+        })
+        print(self._last_l_cost)
+        print(self._last_celu)
         return info

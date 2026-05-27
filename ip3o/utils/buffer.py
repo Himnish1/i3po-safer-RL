@@ -74,11 +74,12 @@ class RolloutBuffer:
         return returns
 
     def get(self, device: torch.device, last_vr: float = 0.0, last_vc: float = 0.0) -> Dict[str, torch.Tensor]:
+        # Compute reward GAE (advantage) and returns
         reward_adv, reward_ret = self._gae(self.rewards, self.reward_values + [last_vr])
-        cost_adv, _ = self._gae(self.costs, self.cost_values + [last_vc])
-        cost_ret = self._discounted_returns(self.costs, bootstrap_value=last_vc)
+        # Compute cost GAE and returns (use GAE for consistency with reward)
+        cost_adv, cost_ret = self._gae(self.costs, self.cost_values + [last_vc])
+        # Normalize reward advantages only; preserve cost_adv magnitude for L_C computation
         reward_adv = (reward_adv - reward_adv.mean()) / (reward_adv.std() + 1e-8)
-        cost_adv = (cost_adv - cost_adv.mean()) / (cost_adv.std() + 1e-8)
 
         batch = {
             "obs": torch.as_tensor(np.asarray(self.obs), dtype=torch.float32, device=device),

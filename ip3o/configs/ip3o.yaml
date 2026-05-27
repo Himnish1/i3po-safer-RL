@@ -1,7 +1,7 @@
 env_id: SafetyPointGoal1-v0
 algorithm: ip3o
 seed: 0
-epochs: 300
+epochs: 150
 steps_per_epoch: 4000
 gamma: 0.99
 gae_lambda: 0.95
@@ -12,10 +12,8 @@ algorithm_config:
   policy_lr: 0.0003
   value_lr: 0.001
   train_iters: 10
-  target_kl: 0.015
-  entropy_coef: 0.0
-  cost_limit: 25.0
+  target_kl: 0.09
+  entropy_coef: 0.05
+  cost_limit: 4
   lambda_lr: 0.05
-  initial_penalty: 0.1
-  penalty_increment: 0.05
-  max_penalty: 10.0
+  eta: 5

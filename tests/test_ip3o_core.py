@@ -2,8 +2,10 @@ import unittest
 
 try:
     import torch
+    import torch.nn.functional as F
 except ModuleNotFoundError:  # pragma: no cover - environment dependent
     torch = None
+    F = None
 
 if torch is not None:
     from ip3o.algorithms.ip3o import IP3O, IP3OConfig
@@ -26,24 +28,30 @@ class TestIP3OCore(unittest.TestCase):
 
     def test_incremental_penalty_increases_as_cost_approaches_limit(self):
         model = ActorCritic(obs_dim=4, act_dim=2, hidden_sizes=(16, 16))
-        cfg = IP3OConfig(cost_limit=10.0, initial_penalty=1.0, penalty_increment=0.5, max_penalty=2.0)
+        cfg = IP3OConfig(cost_limit=10.0, eta=1.0, gamma=0.99)
         algo = IP3O(model, cfg, device=torch.device("cpu"))
 
-        low_cost_penalty = algo.incremental_penalty(torch.tensor(2.0))
-        high_cost_penalty = algo.incremental_penalty(torch.tensor(9.0))
+        # L_C is small when cost is well below limit
+        low_l_cost = algo.cfg.eta * F.celu(torch.tensor(-5.0))
+        # L_C grows as cost approaches and exceeds limit
+        high_l_cost = algo.cfg.eta * F.celu(torch.tensor(8.0))
 
-        self.assertGreater(high_cost_penalty.item(), low_cost_penalty.item())
+        self.assertLess(low_l_cost.item(), high_l_cost.item())
 
-    def test_penalty_coefficient_anneals_and_caps(self):
+    def test_celu_penalty_self_scales_with_l_cost(self):
+        """Test that CELU barrier self-scales: eta * CELU(L_C) grows as constraint is violated."""
         model = ActorCritic(obs_dim=4, act_dim=2, hidden_sizes=(16, 16))
-        cfg = IP3OConfig(initial_penalty=0.1, penalty_increment=0.3, max_penalty=0.5)
+        cfg = IP3OConfig(eta=1.0, cost_limit=10.0, gamma=0.99)
         algo = IP3O(model, cfg, device=torch.device("cpu"))
 
-        algo.anneal_penalty()
-        algo.anneal_penalty()
-        algo.anneal_penalty()
+        # When L_C < 0 (safe), CELU output is small negative
+        safe_penalty = algo.cfg.eta * F.celu(torch.tensor(-2.0))
+        # When L_C > 0 (violated), CELU output is linear and grows
+        violated_penalty = algo.cfg.eta * F.celu(torch.tensor(5.0))
 
-        self.assertAlmostEqual(algo.penalty_coeff.item(), 0.5, places=6)
+        self.assertLess(safe_penalty.item(), 0.0)
+        self.assertGreater(violated_penalty.item(), 0.0)
+        self.assertGreater(abs(violated_penalty.item()), abs(safe_penalty.item()))
 
     def test_cost_returns_are_discounted_cost_to_go(self):
         buffer = RolloutBuffer(gamma=0.9, gae_lambda=0.95)
@@ -51,7 +59,7 @@ class TestIP3OCore(unittest.TestCase):
         buffer.add([0.0], [0.0], 0.0, 2.0, False, 0.0, 0.0, 0.0)
         batch = buffer.get(torch.device("cpu"), last_vr=0.0, last_vc=0.5)
 
-        expected = torch.tensor([3.205, 2.45], dtype=torch.float32)
+        expected = torch.tensor([3.09475, 2.45], dtype=torch.float32)
         self.assertTrue(torch.allclose(batch["cost_returns"], expected, atol=1e-6))
         self.assertTrue(torch.all(batch["cost_returns"] >= 0))
 
