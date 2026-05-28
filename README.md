@@ -1,6 +1,6 @@
 # IP3O: Incrementally Penalized Proximal Policy Optimization for Safe Reinforcement Learning
 
-An independent reproduction and implementation of the IP3O algorithm from ["Incrementally Penalized PPO: Towards Safe Reinforcement Learning via Gradual Constraint Satisfaction"](https://arxiv.org/abs/2502.xxxxx) (Hazra et al., 2025).
+An independent reproduction and implementation of the IP3O algorithm from ["Incrementally Penalized PPO: Towards Safe Reinforcement Learning via Gradual Constraint Satisfaction"](https://arxiv.org/abs/2509.09208) (Hazra et al., 2025).
 
 ## Motivation
 
