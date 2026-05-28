@@ -257,13 +257,14 @@ python -m pytest tests/test_wrappers.py -v
 
 ### Current Limitations
 
-1. **Single environment**: Evaluation limited to Safety-Gymnasium Goal1. Generalization to other tasks/environments not tested.
+1. **Low reward**: Both methods achieve near-zero final reward, indicating that more careful training or reward shaping may be needed to achieve higher performance. The trust region constraint may be too tight for effective exploration in this environment. I plan to work on improving the results here by tuning hyperparameters and potentially relaxing the KL constraint.
+2. **Single environment**: Evaluation limited to Safety-Gymnasium Goal1. Generalization to other tasks/environments not tested.
 
-2. **No environment parallelism**: Single-threaded rollouts limit throughput. Vectorized environments could provide 4-8x speedup.
+3. **No environment parallelism**: Single-threaded rollouts limit throughput. Vectorized environments could provide 4-8x speedup.
 
-3. **Hyperparameter sensitivity**: Despite simpler hyperparameter tuning than Lagrangian methods, performance remains sensitive to `eta` and cost budget scaling.
+4. **Hyperparameter sensitivity**: Despite simpler hyperparameter tuning than Lagrangian methods, performance remains sensitive to `eta` and cost budget scaling.
 
-4. **Limited baselines**: Comparison only against PPO-Lagrangian. Could compare against projection-based methods, constrained MDPs with second-order approximations, etc.
+5. **Limited baselines**: Comparison only against PPO-Lagrangian. Could compare against projection-based methods, constrained MDPs with second-order approximations, etc.
 
 ### Future Directions
 
