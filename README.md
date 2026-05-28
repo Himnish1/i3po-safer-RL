@@ -211,7 +211,7 @@ These observations underscore that while IP3O improves the conceptual stability 
 
 The IP3O framework provides formal correctness guarantees through the following theorem:
 
-**Theorem**: Given a sequence of policies $\{\pi_k\}$ obtained by minimizing $\mathcal{L}(\pi_k)$, and considering Slater's condition for strong duality, let $\lambda^*$ denote the Lagrange multipliers for the original constrained problem. If $\eta \geq \|\lambda^*\|_\infty$, the limit $\pi^*$ of $\{\pi_k\}$ is also an optimal solution to the constrained optimization problem.
+**Theorem**: Given a sequence of policies $\{\pi_k\}$ obtained by minimizing $\mathcal{L}(\pi_k)$, and considering Slater's condition for strong duality, let $\lambda^\star$ denote the Lagrange multipliers for the original constrained problem. If $\eta \geq \|\lambda^*\|_\infty$, the limit $\pi^\star$ of $\{\pi_k\}$ is also an optimal solution to the constrained optimization problem.
 
 **Proof sketch**: The proof establishes bidirectional equivalence between the constrained and penalized formulations:
 - **Lemma 4**: Any optimal solution of the constrained problem is optimal for the penalized problem when $\eta$ is sufficiently large.
@@ -275,7 +275,9 @@ python -m pytest tests/test_wrappers.py -v
 
 ## References
 
-Hazra et al., "Incrementally Penalized Proximal Policy Optimization," 2025. [arXiv:2502.xxxxx](https://arxiv.org/abs/2502.xxxxx)
+Somnath Hazra, Pallab Dasgupta, and Soumyajit Dey. “Incentivizing safer actions in policy
+ optimization for constrained reinforcement learning”. In: arXiv preprint arXiv:2509.09208
+(2025).
 
 ## Acknowledgments
 
